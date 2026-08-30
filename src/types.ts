@@ -103,3 +103,64 @@ export interface SampleVideoItem {
   description: string;
   thumbnailColor: string;
 }
+
+export type PlanId = 'free' | 'starter' | 'creator' | 'pro';
+
+export interface SubscriptionPlan {
+  id: PlanId;
+  name: string;
+  tagline: string;
+  priceMonthlyINR: number;
+  priceAnnualINR: number;
+  minutesPerMonth: number;
+  maxResolution: '720p' | '1080p' | '4k';
+  resolutionLabel: string;
+  watermark: boolean;
+  isPopular?: boolean;
+  badge?: string;
+  features: string[];
+  featureHighlights: {
+    minutes: string;
+    resolution: string;
+    watermark: string;
+    aiFeatures: string;
+    extras?: string;
+  };
+  hasAiContentScore: boolean;
+  hasAiTitlesHooks: boolean;
+  hasBrandKit: boolean;
+  hasPriorityProcessing: boolean;
+  hasBatchGeneration: boolean;
+  hasMultiLanguage: boolean;
+  hasAutoReframe: boolean;
+  hasAiCaptions: boolean;
+}
+
+export interface BrandKitSettings {
+  brandName: string;
+  handle: string;
+  primaryColor: string;
+  showBrandWatermark: boolean;
+}
+
+export interface UsageRecord {
+  id: string;
+  timestamp: string;
+  type: 'analysis' | 'clip_render' | 'batch_render';
+  durationMinutes: number;
+  title: string;
+  details?: string;
+}
+
+export interface UserSubscription {
+  planId: PlanId;
+  plan: SubscriptionPlan;
+  billingCycle: 'monthly' | 'annual';
+  minutesTotal: number;
+  minutesUsed: number;
+  minutesRemaining: number;
+  renewalDate: string;
+  isActive: boolean;
+  brandKit: BrandKitSettings;
+  usageHistory: UsageRecord[];
+}

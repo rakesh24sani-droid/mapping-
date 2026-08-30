@@ -10,9 +10,12 @@ import {
   Check,
   Smartphone,
   Cpu,
-  AlertCircle
+  AlertCircle,
+  Crown,
+  Palette,
+  ShieldAlert
 } from 'lucide-react';
-import { BestMoment, VideoCropStyle, ClipGenerationOptions, VideoMetadata } from '../types.js';
+import { BestMoment, VideoCropStyle, ClipGenerationOptions, VideoMetadata, UserSubscription } from '../types.js';
 
 interface GenerateModalProps {
   moment: BestMoment;
@@ -21,6 +24,8 @@ interface GenerateModalProps {
   onClose: () => void;
   onStartRender: (options: ClipGenerationOptions) => void;
   isRendering: boolean;
+  subscription: UserSubscription | null;
+  onOpenPricing: () => void;
 }
 
 export const GenerateModal: React.FC<GenerateModalProps> = ({
@@ -30,6 +35,8 @@ export const GenerateModal: React.FC<GenerateModalProps> = ({
   onClose,
   onStartRender,
   isRendering,
+  subscription,
+  onOpenPricing,
 }) => {
   const [cropStyle, setCropStyle] = useState<VideoCropStyle>('blurred-backdrop');
   const [addHeadline, setAddHeadline] = useState(false);
@@ -40,6 +47,10 @@ export const GenerateModal: React.FC<GenerateModalProps> = ({
   if (!isOpen) return null;
 
   const duration = Math.max(1, Math.round(endTime - startTime));
+  const plan = subscription?.plan;
+  const isFreePlan = plan?.id === 'free';
+  const brandKit = subscription?.brandKit;
+  const accentColor = plan?.hasBrandKit && brandKit?.primaryColor ? brandKit.primaryColor : '#6366F1';
 
   const handleRenderSubmit = () => {
     onStartRender({
@@ -48,7 +59,7 @@ export const GenerateModal: React.FC<GenerateModalProps> = ({
       addHeadline,
       headlineText,
       burnCaptions: false,
-      accentColor: '#6366F1',
+      accentColor,
     });
   };
 
@@ -75,6 +86,13 @@ export const GenerateModal: React.FC<GenerateModalProps> = ({
       icon: '🎬'
     },
   ];
+
+  const getResolutionLabel = () => {
+    if (!plan) return '1080x1920 (FHD)';
+    if (plan.maxResolution === '4k') return '2160x3840 (4K Ultra HD)';
+    if (plan.maxResolution === '720p') return '720x1280 (720p HD)';
+    return '1080x1920 (1080p Full HD)';
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md overflow-y-auto">
@@ -192,20 +210,55 @@ export const GenerateModal: React.FC<GenerateModalProps> = ({
                   className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs sm:text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
                   maxLength={65}
                 />
-                <p className="text-[11px] text-slate-400">
-                  Will be burned into the top region of the 9:16 vertical render.
-                </p>
+                <div className="flex items-center justify-between text-[11px] text-slate-400">
+                  <span>Burned into top region of 9:16 vertical render.</span>
+                  {plan?.hasBrandKit && (
+                    <span className="text-indigo-400 font-medium">Brand Accent Applied</span>
+                  )}
+                </div>
               </motion.div>
             )}
           </div>
 
-          {/* Technical Specs Guarantee */}
-          <div className="p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-between text-xs text-indigo-300">
-            <div className="flex items-center gap-2">
-              <Cpu className="w-4 h-4 text-indigo-400" />
-              <span>FFmpeg Output: <strong>1080x1920 @ 30FPS</strong> H.264 High Profile</span>
+          {/* Plan Quality & Watermark Status Card */}
+          <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-3">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-slate-400">Plan Export Quality:</span>
+              <span className="font-bold text-white uppercase font-mono">
+                {getResolutionLabel()}
+              </span>
             </div>
-            <span className="font-mono text-[11px] font-bold">~{duration}s</span>
+
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-slate-400">Watermark Status:</span>
+              {isFreePlan ? (
+                <div className="flex items-center gap-1.5 text-amber-400 font-semibold">
+                  <span>"Made with ClipForge AI"</span>
+                  <button
+                    type="button"
+                    onClick={onOpenPricing}
+                    className="underline text-indigo-400 hover:text-indigo-300 ml-1 cursor-pointer"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ) : brandKit?.showBrandWatermark && brandKit?.handle ? (
+                <span className="text-emerald-400 font-semibold">
+                  Custom Handle: {brandKit.handle}
+                </span>
+              ) : (
+                <span className="text-emerald-400 font-semibold">
+                  Clean (No Watermark)
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-800 text-slate-400">
+              <span>Estimated Minutes Cost:</span>
+              <span className="font-bold text-indigo-300 font-mono">
+                {(duration / 60).toFixed(1)} mins (from {subscription?.minutesRemaining}m balance)
+              </span>
+            </div>
           </div>
         </div>
 

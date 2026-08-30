@@ -14,11 +14,20 @@ import {
 import { analyzeVideoWithGemini } from './server/gemini-service.js';
 import { SAMPLE_VIDEOS } from './server/sample-videos.js';
 import {
+  getAllPlans,
+  getUserSubscription,
+  changeUserPlan,
+  recordUsage,
+  resetUsage,
+  updateBrandKit,
+} from './server/subscription-service.js';
+import {
   VideoMetadata,
   AnalysisResult,
   GeneratedClip,
   ProcessingJob,
   ClipGenerationOptions,
+  PlanId,
 } from './src/types.js';
 
 dotenv.config();
@@ -80,6 +89,170 @@ async function startServer() {
       hasGeminiKey: !!process.env.GEMINI_API_KEY,
       storageReady: true,
       timestamp: new Date().toISOString(),
+    });
+  });
+
+  // ==========================================
+  // SUBSCRIPTION & PRICING PLAN ENDPOINTS
+  // ==========================================
+
+  // Get all subscription plans configuration (backend-driven)
+  app.get('/api/subscription/plans', (req: Request, res: Response) => {
+    res.json({ plans: getAllPlans() });
+  });
+
+  // Get current user subscription, minutes remaining and usage
+  app.get('/api/subscription/user', (req: Request, res: Response) => {
+    const subscription = getUserSubscription();
+    res.json({ subscription });
+  });
+
+  // Change / Upgrade Plan (Simulated activation mode)
+  app.post('/api/subscription/change-plan', (req: Request, res: Response) => {
+    try {
+      const { planId, billingCycle = 'monthly' } = req.body as { planId: PlanId; billingCycle?: 'monthly' | 'annual' };
+      if (!planId || !['free', 'starter', 'creator', 'pro'].includes(planId)) {
+        return res.status(400).json({ error: 'Invalid plan ID provided' });
+      }
+
+      const updated = changeUserPlan(planId, billingCycle);
+      res.json({
+        success: true,
+        message: `Subscription successfully switched to ${updated.plan.name} plan!`,
+        subscription: updated,
+      });
+    } catch (err: any) {
+      console.error('Plan change error:', err);
+      res.status(500).json({ error: err.message || 'Failed to update plan' });
+    }
+  });
+
+  // Reset monthly usage (testing / demo convenience)
+  app.post('/api/subscription/reset-usage', (req: Request, res: Response) => {
+    const updated = resetUsage();
+    res.json({ success: true, subscription: updated, message: 'Monthly usage minutes reset to 0.' });
+  });
+
+  // Update Creator/Pro Brand Kit
+  app.post('/api/subscription/update-brand-kit', (req: Request, res: Response) => {
+    const sub = getUserSubscription();
+    if (!sub.plan.hasBrandKit) {
+      return res.status(403).json({
+        error: 'Brand Kit is available on CREATOR (₹249/mo) and PRO (₹699/mo) plans. Please upgrade to customize branding.',
+        requiresUpgrade: true,
+        recommendedPlan: 'creator',
+      });
+    }
+
+    const { brandName, handle, primaryColor, showBrandWatermark } = req.body;
+    const updated = updateBrandKit({
+      brandName: brandName ?? sub.brandKit.brandName,
+      handle: handle ?? sub.brandKit.handle,
+      primaryColor: primaryColor ?? sub.brandKit.primaryColor,
+      showBrandWatermark: showBrandWatermark ?? sub.brandKit.showBrandWatermark,
+    });
+
+    res.json({ success: true, subscription: updated, message: 'Brand Kit settings saved.' });
+  });
+
+  // Batch Generation of All Moments (Pro Plan Feature)
+  app.post('/api/subscription/batch-generate', async (req: Request, res: Response) => {
+    const sub = getUserSubscription();
+    const { videoId, cropStyle = 'blurred-backdrop', addHeadline = true } = req.body;
+
+    if (!sub.plan.hasBatchGeneration) {
+      return res.status(403).json({
+        error: '1-Click Batch Generation is exclusive to the PRO plan (₹699/mo). Please upgrade to unlock.',
+        requiresUpgrade: true,
+        recommendedPlan: 'pro',
+      });
+    }
+
+    const video = videosStore.get(videoId);
+    const analysis = analysisStore.get(videoId);
+    if (!video || !analysis || !analysis.moments.length) {
+      return res.status(404).json({ error: 'Video or moments not found for batch generation' });
+    }
+
+    // Calculate total duration
+    const totalBatchDuration = analysis.moments.reduce((acc, m) => acc + m.duration, 0);
+    const totalMinutesNeeded = Math.ceil((totalBatchDuration / 60) * 10) / 10;
+
+    if (sub.minutesRemaining < totalMinutesNeeded) {
+      return res.status(402).json({
+        error: `Insufficient minutes remaining for batch generation (${totalMinutesNeeded} mins required, ${sub.minutesRemaining} mins remaining).`,
+        minutesNeeded: totalMinutesNeeded,
+        minutesRemaining: sub.minutesRemaining,
+      });
+    }
+
+    const batchJobId = `job_batch_${Date.now()}`;
+    const generatedClipIds: string[] = [];
+
+    // Trigger batch generation asynchronously
+    (async () => {
+      for (let i = 0; i < analysis.moments.length; i++) {
+        const moment = analysis.moments[i];
+        const clipId = `clip_batch_${Date.now()}_${i}`;
+        try {
+          const renderResult = await cutAndConvert916(video.filePath, clipId, {
+            startTime: moment.startTime,
+            duration: moment.duration,
+            cropStyle,
+            headlineText: addHeadline ? moment.title : undefined,
+            addHeadline,
+            resolution: sub.plan.maxResolution,
+            watermark: sub.plan.watermark,
+            brandWatermark: sub.brandKit.showBrandWatermark ? sub.brandKit.handle : undefined,
+          });
+
+          let clipThumbUrl = '';
+          try {
+            clipThumbUrl = await generateThumbnail(renderResult.outputPath, 1, `thumb_${clipId}`);
+          } catch (e) {
+            console.warn('Clip thumbnail error:', e);
+          }
+
+          const clip: GeneratedClip = {
+            id: clipId,
+            videoId,
+            momentId: moment.id,
+            title: moment.title,
+            hook: moment.hook,
+            startTime: moment.startTime,
+            endTime: moment.endTime,
+            duration: renderResult.duration,
+            cropStyle,
+            hasHeadline: addHeadline,
+            headlineText: addHeadline ? moment.title : undefined,
+            filePath: renderResult.outputPath,
+            streamUrl: `/api/clips/${clipId}/stream`,
+            downloadUrl: `/api/clips/${clipId}/download`,
+            thumbnailUrl: clipThumbUrl || '',
+            fileSize: renderResult.fileSize,
+            resolution: renderResult.resolution,
+            score: moment.score,
+            suggestedCaption: moment.suggestedCaption,
+            hashtags: moment.hashtags,
+            createdAt: new Date().toISOString(),
+          };
+
+          clipsStore.set(clipId, clip);
+          generatedClipIds.push(clipId);
+        } catch (err) {
+          console.error(`Batch render failed for moment ${moment.id}:`, err);
+        }
+      }
+
+      recordUsage('batch_render', totalBatchDuration, `Batch Render: ${analysis.moments.length} Clips (${video.originalName})`);
+    })();
+
+    res.json({
+      success: true,
+      batchJobId,
+      totalMoments: analysis.moments.length,
+      estimatedMinutes: totalMinutesNeeded,
+      message: `Batch rendering ${analysis.moments.length} vertical clips in background...`,
     });
   });
 
@@ -199,6 +372,17 @@ async function startServer() {
       return res.json({ success: true, analysis: analysisStore.get(videoId) });
     }
 
+    const sub = getUserSubscription();
+    const minutesNeeded = Math.max(0.1, Number((video.duration / 60).toFixed(1)));
+    if (sub.minutesRemaining < minutesNeeded) {
+      return res.status(402).json({
+        error: `Insufficient processing credits. This video requires ${minutesNeeded} minutes of processing, but you only have ${sub.minutesRemaining} minutes remaining on your ${sub.plan.name} plan.`,
+        minutesNeeded,
+        minutesRemaining: sub.minutesRemaining,
+        currentPlan: sub.plan.name,
+      });
+    }
+
     const jobId = `job_ana_${Date.now()}`;
     const job: ProcessingJob = {
       id: jobId,
@@ -250,6 +434,9 @@ async function startServer() {
         job.result = result;
 
         analysisStore.set(videoId, result);
+
+        // Record audio analysis usage
+        recordUsage('analysis', video.duration, `AI Analysis: ${video.originalName}`, `Extracted audio and detected ${result.moments.length} viral clips`);
       } catch (err: any) {
         console.error('Async analysis error:', err);
         job.status = 'failed';
@@ -284,8 +471,22 @@ async function startServer() {
       return res.status(404).json({ error: 'Moment not found in analysis' });
     }
 
+    const sub = getUserSubscription();
+    const clipMinutesNeeded = Math.max(0.1, Number((moment.duration / 60).toFixed(1)));
+    if (sub.minutesRemaining < clipMinutesNeeded) {
+      return res.status(402).json({
+        error: `Insufficient processing credits to render this clip (${clipMinutesNeeded} mins required, ${sub.minutesRemaining} mins remaining on ${sub.plan.name} plan). Please upgrade your plan.`,
+        minutesNeeded: clipMinutesNeeded,
+        minutesRemaining: sub.minutesRemaining,
+      });
+    }
+
     const clipId = `clip_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const jobId = `job_gen_${clipId}`;
+
+    const renderResolution = sub.plan.maxResolution;
+    const shouldWatermark = sub.plan.watermark;
+    const brandWatermarkText = sub.plan.hasBrandKit && sub.brandKit.showBrandWatermark ? sub.brandKit.handle : undefined;
 
     const job: ProcessingJob = {
       id: jobId,
@@ -293,7 +494,7 @@ async function startServer() {
       status: 'processing',
       progress: 5,
       stage: 'Initializing FFmpeg 9:16 rendering pipeline...',
-      detail: `Applying ${cropStyle} vertical layout (1080x1920)`,
+      detail: `Applying ${cropStyle} vertical layout (${renderResolution.toUpperCase()})`,
     };
     jobsStore.set(jobId, job);
 
@@ -309,7 +510,10 @@ async function startServer() {
             cropStyle,
             headlineText: addHeadline ? (headlineText || moment.title) : undefined,
             addHeadline,
-            accentColor,
+            accentColor: sub.plan.hasBrandKit && sub.brandKit.primaryColor ? sub.brandKit.primaryColor : accentColor,
+            resolution: renderResolution,
+            watermark: shouldWatermark,
+            brandWatermark: brandWatermarkText,
           },
           (progressPercent) => {
             job.progress = Math.min(98, Math.max(5, progressPercent));
@@ -343,7 +547,7 @@ async function startServer() {
           downloadUrl: `/api/clips/${clipId}/download`,
           thumbnailUrl: clipThumbUrl || '',
           fileSize: renderResult.fileSize,
-          resolution: '1080x1920 (9:16)',
+          resolution: renderResult.resolution,
           score: moment.score,
           suggestedCaption: moment.suggestedCaption,
           hashtags: moment.hashtags,
@@ -356,6 +560,9 @@ async function startServer() {
         job.status = 'completed';
         job.stage = '9:16 Clip Generated Successfully!';
         job.result = generatedClip;
+
+        // Record clip render usage
+        recordUsage('clip_render', moment.duration, `Render Clip: ${moment.title}`, `Rendered 9:16 at ${renderResult.resolution}${shouldWatermark ? ' (Watermarked)' : ''}`);
       } catch (err: any) {
         console.error('Async clip generation error:', err);
         job.status = 'failed';

@@ -16,22 +16,35 @@ import {
   Tag,
   Info,
   Sliders,
-  CheckCircle2
+  CheckCircle2,
+  Crown,
+  Palette,
+  Zap,
+  ArrowRight,
+  ShieldAlert
 } from 'lucide-react';
-import { AnalysisResult, BestMoment, VideoMetadata } from '../types.js';
+import { AnalysisResult, BestMoment, VideoMetadata, UserSubscription } from '../types.js';
 
 interface MomentsStepProps {
   analysis: AnalysisResult;
   video: VideoMetadata;
+  subscription: UserSubscription | null;
   onSelectMoment: (moment: BestMoment) => void;
   onQuickGenerate: (moment: BestMoment) => void;
+  onOpenPricing: () => void;
+  onOpenBatchGenerate: () => void;
+  onOpenBrandKit: () => void;
 }
 
 export const MomentsStep: React.FC<MomentsStepProps> = ({
   analysis,
   video,
+  subscription,
   onSelectMoment,
   onQuickGenerate,
+  onOpenPricing,
+  onOpenBatchGenerate,
+  onOpenBrandKit,
 }) => {
   const [expandedMomentId, setExpandedMomentId] = useState<string | null>(analysis.moments[0]?.id || null);
   const [copiedCaptionId, setCopiedCaptionId] = useState<string | null>(null);
@@ -48,11 +61,14 @@ export const MomentsStep: React.FC<MomentsStepProps> = ({
     return 'from-indigo-500 to-violet-400 border-indigo-500/40 text-indigo-300';
   };
 
+  const isFreePlan = subscription?.plan.id === 'free';
+  const isProPlan = subscription?.plan.id === 'pro';
+
   return (
     <div className="w-full max-w-5xl mx-auto px-4 py-8 space-y-8">
       {/* Top Banner / Summary */}
       <div className="space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold mb-2">
               <CheckCircle2 className="w-3.5 h-3.5" />
@@ -62,10 +78,55 @@ export const MomentsStep: React.FC<MomentsStepProps> = ({
               Select a Viral Moment to Convert to 9:16
             </h2>
           </div>
-          <div className="text-xs text-slate-400 font-mono bg-slate-800/80 border border-slate-700 px-3 py-1.5 rounded-lg self-start sm:self-auto">
-            Source: <span className="text-slate-200">{video.originalName}</span>
+
+          {/* Quick Actions Toolbar (Batch & Brand Kit) */}
+          <div className="flex items-center gap-2.5 self-start md:self-auto flex-wrap">
+            <button
+              id="batch-generate-top-btn"
+              onClick={onOpenBatchGenerate}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer shadow-md ${
+                isProPlan
+                  ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-600/25'
+                  : 'bg-slate-800 hover:bg-slate-700 text-indigo-300 border border-indigo-500/40'
+              }`}
+            >
+              <Layers className="w-4 h-4 text-cyan-400" />
+              <span>1-Click Batch Generate All</span>
+              {!isProPlan && (
+                <span className="text-[9px] font-black uppercase px-1.5 py-0.2 bg-indigo-500/20 rounded text-indigo-300 border border-indigo-500/30">
+                  PRO
+                </span>
+              )}
+            </button>
+
+            <button
+              id="brand-kit-moments-btn"
+              onClick={onOpenBrandKit}
+              className="px-3 py-2 rounded-xl text-xs font-bold text-slate-300 bg-slate-800 hover:bg-slate-700 hover:text-white border border-slate-700 transition-all cursor-pointer flex items-center gap-1.5"
+            >
+              <Palette className="w-3.5 h-3.5 text-amber-400" />
+              <span className="hidden sm:inline">Brand Kit</span>
+            </button>
           </div>
         </div>
+
+        {/* Free Plan Watermark / Upgrade Notice */}
+        {isFreePlan && (
+          <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2.5 text-amber-300">
+              <Crown className="w-4 h-4 shrink-0 fill-amber-400 text-amber-400" />
+              <span>
+                <strong>Free Plan Active:</strong> Clips export in <strong>720p HD with ClipForge Watermark</strong>. Upgrade for 1080p clean exports and 150-500 mins.
+              </span>
+            </div>
+            <button
+              onClick={onOpenPricing}
+              className="px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shrink-0 cursor-pointer shadow-sm"
+            >
+              Upgrade (from ₹99/mo)
+            </button>
+          </div>
+        )}
 
         {/* Video Summary & Detected Topics */}
         <div className="p-4 rounded-xl border border-slate-700/50 bg-slate-800/40 space-y-3">

@@ -8,6 +8,10 @@ import {
   ProcessingJob,
   SampleVideoItem,
   ClipGenerationOptions,
+  SubscriptionPlan,
+  UserSubscription,
+  BrandKitSettings,
+  VideoCropStyle,
 } from './types.js';
 import { Header } from './components/Header.js';
 import { UploadStep } from './components/UploadStep.js';
@@ -15,15 +19,27 @@ import { AnalysisStep } from './components/AnalysisStep.js';
 import { MomentsStep } from './components/MomentsStep.js';
 import { GenerateModal } from './components/GenerateModal.js';
 import { PreviewStep } from './components/PreviewStep.js';
+import { PricingModal } from './components/PricingModal.js';
+import { UsageModal } from './components/UsageModal.js';
+import { BrandKitModal } from './components/BrandKitModal.js';
+import { BatchGenerateModal } from './components/BatchGenerateModal.js';
 
 export default function App() {
-  // State Machine
+  // Core Workflow State
   const [currentStep, setCurrentStep] = useState<WorkflowStep>('upload');
   const [samples, setSamples] = useState<SampleVideoItem[]>([]);
   const [video, setVideo] = useState<VideoMetadata | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [selectedMoment, setSelectedMoment] = useState<BestMoment | null>(null);
   const [generatedClip, setGeneratedClip] = useState<GeneratedClip | null>(null);
+
+  // Subscription System State
+  const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
+  const [subscription, setSubscription] = useState<UserSubscription | null>(null);
+  const [isPricingOpen, setIsPricingOpen] = useState(false);
+  const [isUsageOpen, setIsUsageOpen] = useState(false);
+  const [isBrandKitOpen, setIsBrandKitOpen] = useState(false);
+  const [isBatchOpen, setIsBatchOpen] = useState(false);
 
   // Job & Processing State
   const [isUploading, setIsUploading] = useState(false);
@@ -36,7 +52,33 @@ export default function App() {
   // Polling ref
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Load sample videos on startup
+  // Fetch subscription info
+  const fetchSubscription = async () => {
+    try {
+      const res = await fetch('/api/subscription/user');
+      if (res.ok) {
+        const data = await res.json();
+        setSubscription(data.subscription);
+      }
+    } catch (err) {
+      console.warn('Could not load user subscription:', err);
+    }
+  };
+
+  // Fetch plans list
+  const fetchPlans = async () => {
+    try {
+      const res = await fetch('/api/subscription/plans');
+      if (res.ok) {
+        const data = await res.json();
+        setPlans(data.plans || []);
+      }
+    } catch (err) {
+      console.warn('Could not load subscription plans:', err);
+    }
+  };
+
+  // Load sample videos and subscription on startup
   useEffect(() => {
     fetch('/api/samples')
       .then((res) => res.json())
@@ -44,6 +86,9 @@ export default function App() {
         if (data.samples) setSamples(data.samples);
       })
       .catch((err) => console.warn('Could not load samples list:', err));
+
+    fetchSubscription();
+    fetchPlans();
   }, []);
 
   // Cleanup polling on unmount
@@ -52,6 +97,75 @@ export default function App() {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
     };
   }, []);
+
+  // Handle Plan Upgrade / Switch
+  const handleSelectPlan = async (planId: string, billingCycle: 'monthly' | 'yearly') => {
+    try {
+      const res = await fetch('/api/subscription/change-plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ planId, billingCycle }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to update plan');
+      }
+      const data = await res.json();
+      setSubscription(data.subscription);
+      setIsPricingOpen(false);
+    } catch (err: any) {
+      alert(`Error updating plan: ${err.message}`);
+    }
+  };
+
+  // Handle Reset Usage
+  const handleResetUsage = async () => {
+    try {
+      const res = await fetch('/api/subscription/reset-usage', {
+        method: 'POST',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSubscription(data.subscription);
+      }
+    } catch (err) {
+      console.warn('Could not reset usage:', err);
+    }
+  };
+
+  // Handle Save Brand Kit
+  const handleSaveBrandKit = async (settings: Partial<BrandKitSettings>) => {
+    const res = await fetch('/api/subscription/update-brand-kit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to save Brand Kit');
+    }
+    const data = await res.json();
+    setSubscription(data.subscription);
+  };
+
+  // Handle Batch Generation Trigger
+  const handleTriggerBatch = async (cropStyle: VideoCropStyle, addHeadline: boolean) => {
+    if (!video) return;
+    const res = await fetch('/api/subscription/batch-generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        videoId: video.id,
+        cropStyle,
+        addHeadline,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Batch generation failed');
+    }
+    await fetchSubscription();
+  };
 
   // Handler: User uploads a video file
   const handleVideoSelected = async (file: File) => {
@@ -63,7 +177,7 @@ export default function App() {
       const formData = new FormData();
       formData.append('video', file);
 
-      // Simulated smooth upload progress while waiting for real HTTP request
+      // Smooth progress indicator
       const progressTimer = setInterval(() => {
         setUploadProgress((prev) => (prev < 90 ? prev + 15 : prev));
       }, 300);
@@ -119,84 +233,84 @@ export default function App() {
       setVideo(videoData);
       setIsUploading(false);
 
-      // Automatically trigger AI Analysis step
+      // Start Analysis
       startAnalysis(videoData.id);
     } catch (err: any) {
       console.error('Sample loading error:', err);
       setIsUploading(false);
-      setErrorMessage(err.message || 'Failed to load sample demo video');
+      setErrorMessage(err.message || 'Failed to load demo video');
     }
   };
 
-  // Start AI Analysis & Polling Job
+  // Trigger Backend AI Analysis & Poll Job
   const startAnalysis = async (videoId: string) => {
-    setCurrentStep('analysis');
-    setErrorMessage(undefined);
-
     try {
+      setCurrentStep('analysis');
+      setAnalysis(null);
+      setErrorMessage(undefined);
+
       const response = await fetch(`/api/analyze/${videoId}`, {
         method: 'POST',
       });
 
       if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.error || 'Failed to trigger AI analysis');
+        if (response.status === 402) {
+          // Out of minutes
+          const errData = await response.json();
+          setIsPricingOpen(true);
+          throw new Error(errData.error || 'Processing limit exceeded. Please upgrade your plan.');
+        }
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to initiate AI analysis');
       }
 
       const data = await response.json();
-
-      // If cached analysis was returned immediately
-      if (data.analysis) {
-        setAnalysis(data.analysis);
-        setCurrentStep('moments');
-        return;
-      }
-
       const jobId = data.jobId;
-      pollJobStatus(jobId, (completedJob) => {
-        const analysisResult: AnalysisResult = completedJob.result;
-        setAnalysis(analysisResult);
-        setCurrentStep('moments');
-      });
+
+      pollJobStatus(
+        jobId,
+        (completedJob) => {
+          const result: AnalysisResult = completedJob.result;
+          setAnalysis(result);
+          setCurrentStep('moments');
+          fetchSubscription(); // Refresh minutes balance
+        },
+        (error) => {
+          setErrorMessage(`Analysis failed: ${error}`);
+        }
+      );
     } catch (err: any) {
       console.error('Analysis trigger error:', err);
-      setCurrentJob({
-        id: 'error_job',
-        type: 'analysis',
-        status: 'failed',
-        progress: 0,
-        stage: 'Analysis Error',
-        error: err.message,
-      });
+      setErrorMessage(err.message || 'Could not start AI analysis');
     }
   };
 
-  // Poll Job Status for real-time FFmpeg & AI Progress updates
+  // Poll Job Status
   const pollJobStatus = (
     jobId: string,
-    onSuccess: (job: ProcessingJob) => void,
-    onFail?: (error: string) => void
+    onComplete: (job: ProcessingJob) => void,
+    onError: (errorMsg: string) => void
   ) => {
     if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
 
     pollIntervalRef.current = setInterval(async () => {
       try {
-        const res = await fetch(`/api/jobs/${jobId}`);
-        if (!res.ok) return;
+        const response = await fetch(`/api/job/${jobId}`);
+        if (!response.ok) throw new Error('Status check failed');
 
-        const data = await res.json();
+        const data = await response.json();
         const job: ProcessingJob = data.job;
         setCurrentJob(job);
 
         if (job.status === 'completed') {
           if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-          onSuccess(job);
+          onComplete(job);
         } else if (job.status === 'failed') {
           if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-          if (onFail) onFail(job.error || 'Job failed');
+          onError(job.error || 'Processing encountered an unexpected error');
         }
-      } catch (e) {
-        console.warn('Job polling tick warning:', e);
+      } catch (err: any) {
+        console.error('Job polling error:', err);
       }
     }, 800);
   };
@@ -236,6 +350,13 @@ export default function App() {
       });
 
       if (!response.ok) {
+        if (response.status === 402) {
+          setIsRendering(false);
+          setIsModalOpen(false);
+          setIsPricingOpen(true);
+          const errData = await response.json();
+          throw new Error(errData.error || 'Minutes limit exceeded. Please upgrade your plan.');
+        }
         const errData = await response.json();
         throw new Error(errData.error || 'Failed to start clip rendering');
       }
@@ -251,6 +372,7 @@ export default function App() {
           const clip: GeneratedClip = completedJob.result;
           setGeneratedClip(clip);
           setCurrentStep('preview');
+          fetchSubscription(); // Update minutes remaining
         },
         (error) => {
           setIsRendering(false);
@@ -284,6 +406,10 @@ export default function App() {
         currentStep={currentStep}
         onReset={handleReset}
         hasVideo={!!video}
+        subscription={subscription}
+        onOpenPricing={() => setIsPricingOpen(true)}
+        onOpenUsage={() => setIsUsageOpen(true)}
+        onOpenBrandKit={() => setIsBrandKitOpen(true)}
       />
 
       <main className="flex-1 flex flex-col justify-center">
@@ -310,8 +436,12 @@ export default function App() {
           <MomentsStep
             analysis={analysis}
             video={video}
+            subscription={subscription}
             onSelectMoment={handleSelectMoment}
             onQuickGenerate={handleQuickGenerate}
+            onOpenPricing={() => setIsPricingOpen(true)}
+            onOpenBatchGenerate={() => setIsBatchOpen(true)}
+            onOpenBrandKit={() => setIsBrandKitOpen(true)}
           />
         )}
 
@@ -340,19 +470,80 @@ export default function App() {
           onClose={() => !isRendering && setIsModalOpen(false)}
           onStartRender={handleStartRender}
           isRendering={isRendering}
+          subscription={subscription}
+          onOpenPricing={() => {
+            setIsModalOpen(false);
+            setIsPricingOpen(true);
+          }}
         />
       )}
 
-      {/* Persistent Polish Theme Footer */}
+      {/* Subscription Pricing Modal */}
+      <PricingModal
+        isOpen={isPricingOpen}
+        onClose={() => setIsPricingOpen(false)}
+        plans={plans}
+        currentSubscription={subscription}
+        onSelectPlan={handleSelectPlan}
+      />
+
+      {/* Usage & Credit History Modal */}
+      {subscription && (
+        <UsageModal
+          isOpen={isUsageOpen}
+          onClose={() => setIsUsageOpen(false)}
+          subscription={subscription}
+          onOpenPricing={() => {
+            setIsUsageOpen(false);
+            setIsPricingOpen(true);
+          }}
+          onResetUsage={handleResetUsage}
+        />
+      )}
+
+      {/* Brand Kit Customization Modal */}
+      {subscription && (
+        <BrandKitModal
+          isOpen={isBrandKitOpen}
+          onClose={() => setIsBrandKitOpen(false)}
+          subscription={subscription}
+          onSaveBrandKit={handleSaveBrandKit}
+          onOpenPricing={() => {
+            setIsBrandKitOpen(false);
+            setIsPricingOpen(true);
+          }}
+        />
+      )}
+
+      {/* 1-Click Batch Generate Modal */}
+      {analysis && video && subscription && (
+        <BatchGenerateModal
+          isOpen={isBatchOpen}
+          onClose={() => setIsBatchOpen(false)}
+          moments={analysis.moments}
+          video={video}
+          subscription={subscription}
+          onOpenPricing={() => {
+            setIsBatchOpen(false);
+            setIsPricingOpen(true);
+          }}
+          onTriggerBatch={handleTriggerBatch}
+        />
+      )}
+
+      {/* Persistent Theme Footer with Plan Indicators */}
       <footer className="h-16 bg-[#1e293b] border-t border-slate-800 flex items-center justify-between px-6 sm:px-8 text-xs text-slate-400">
         <div className="flex items-center gap-4">
           <div className="flex flex-col">
-            <span className="text-[10px] uppercase font-bold text-slate-500">Output Format</span>
-            <span className="text-xs font-medium text-slate-300">MP4 • Vertical (9:16) • 1080x1920</span>
+            <span className="text-[10px] uppercase font-bold text-slate-500">Output Quality</span>
+            <span className="text-xs font-medium text-slate-300">
+              {subscription?.plan.maxResolution.toUpperCase()} • 9:16 Vertical •{' '}
+              {subscription?.plan.hasWatermark ? 'Watermarked' : 'Clean (No Watermark)'}
+            </span>
           </div>
         </div>
         <div className="flex items-center gap-4 text-[11px] text-slate-500 font-mono">
-          <span>ClipForge AI • FFmpeg 9:16 Video Engine</span>
+          <span>ClipForge AI Engine • Plan: <strong className="text-indigo-400 font-semibold uppercase">{subscription?.plan.name || 'FREE'}</strong></span>
         </div>
       </footer>
     </div>

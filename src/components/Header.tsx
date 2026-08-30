@@ -1,14 +1,27 @@
 import React from 'react';
 import { Sparkles, CheckCircle2, RotateCcw, Cpu } from 'lucide-react';
-import { WorkflowStep } from '../types.js';
+import { WorkflowStep, UserSubscription } from '../types.js';
+import { SubscriptionBar } from './SubscriptionBar.js';
 
 interface HeaderProps {
   currentStep: WorkflowStep;
   onReset: () => void;
   hasVideo: boolean;
+  subscription: UserSubscription | null;
+  onOpenPricing: () => void;
+  onOpenUsage: () => void;
+  onOpenBrandKit: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ currentStep, onReset, hasVideo }) => {
+export const Header: React.FC<HeaderProps> = ({
+  currentStep,
+  onReset,
+  hasVideo,
+  subscription,
+  onOpenPricing,
+  onOpenUsage,
+  onOpenBrandKit,
+}) => {
   const steps: { id: WorkflowStep; label: string; number: number }[] = [
     { id: 'upload', label: 'Upload', number: 1 },
     { id: 'analysis', label: 'Analyze', number: 2 },
@@ -31,7 +44,7 @@ export const Header: React.FC<HeaderProps> = ({ currentStep, onReset, hasVideo }
     <header className="sticky top-0 z-40 w-full h-16 bg-[#1e293b] border-b border-slate-800 select-none">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-full flex items-center justify-between gap-4">
         {/* Brand Logo & Name */}
-        <div className="flex items-center gap-3 cursor-pointer" onClick={onReset}>
+        <div className="flex items-center gap-3 cursor-pointer shrink-0" onClick={onReset}>
           <div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center font-bold text-white shadow-md shadow-indigo-500/20 text-sm tracking-tighter">
             CF
           </div>
@@ -43,7 +56,7 @@ export const Header: React.FC<HeaderProps> = ({ currentStep, onReset, hasVideo }
         </div>
 
         {/* Workflow Progression Breadcrumb Navigation */}
-        <nav className="hidden md:flex items-center gap-6 text-sm font-medium h-full">
+        <nav className="hidden xl:flex items-center gap-6 text-sm font-medium h-full">
           {steps.map((step, idx) => {
             const isCompleted = idx < currentIndex;
             const isCurrent = idx === currentIndex;
@@ -77,12 +90,23 @@ export const Header: React.FC<HeaderProps> = ({ currentStep, onReset, hasVideo }
           })}
         </nav>
 
-        {/* Engine Status & Reset Action */}
-        <div className="flex items-center gap-5">
-          <div className="flex items-center gap-2.5">
+        {/* Right Section: Subscription Widget, Engine Status & Actions */}
+        <div className="flex items-center gap-3 sm:gap-4">
+          {/* Subscription Credits Bar */}
+          <SubscriptionBar
+            subscription={subscription}
+            onOpenPricing={onOpenPricing}
+            onOpenUsage={onOpenUsage}
+            onOpenBrandKit={onOpenBrandKit}
+          />
+
+          <div className="h-6 w-px bg-slate-800 hidden sm:block" />
+
+          {/* Engine Status */}
+          <div className="hidden md:flex items-center gap-2.5">
             <div className="flex flex-col items-end">
-              <span className="text-[10px] uppercase tracking-wider text-slate-500 font-medium">Engine Status</span>
-              <span className="text-xs text-emerald-400 font-medium">FFmpeg Ready</span>
+              <span className="text-[10px] uppercase tracking-wider text-slate-500 font-medium">Engine</span>
+              <span className="text-xs text-emerald-400 font-medium">Ready</span>
             </div>
             <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]"></div>
           </div>
@@ -95,7 +119,7 @@ export const Header: React.FC<HeaderProps> = ({ currentStep, onReset, hasVideo }
               title="Start a new clip project"
             >
               <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
-              <span className="hidden sm:inline">New Project</span>
+              <span className="hidden sm:inline">New</span>
             </button>
           )}
         </div>
@@ -103,3 +127,4 @@ export const Header: React.FC<HeaderProps> = ({ currentStep, onReset, hasVideo }
     </header>
   );
 };
+

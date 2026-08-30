@@ -150,41 +150,75 @@ export function cutAndConvert916(
     headlineText?: string;
     addHeadline?: boolean;
     accentColor?: string;
+    resolution?: '720p' | '1080p' | '4k';
+    watermark?: boolean;
+    brandWatermark?: string;
   },
   onProgress?: (progressPercent: number) => void
-): Promise<{ outputPath: string; fileSize: number; duration: number }> {
+): Promise<{ outputPath: string; fileSize: number; duration: number; resolution: string }> {
   return new Promise((resolve, reject) => {
     const outputFilename = `clip_${outputClipId}.mp4`;
     const outputPath = path.join(clipsDir, outputFilename);
-    const { startTime, duration, cropStyle, headlineText, addHeadline } = options;
+    const {
+      startTime,
+      duration,
+      cropStyle,
+      headlineText,
+      addHeadline,
+      resolution = '1080p',
+      watermark = false,
+      brandWatermark,
+    } = options;
+
+    const outWidth = resolution === '720p' ? 720 : resolution === '4k' ? 2160 : 1080;
+    const outHeight = resolution === '720p' ? 1280 : resolution === '4k' ? 3840 : 1920;
+    const resString = `${outWidth}x${outHeight} (9:16)`;
 
     let filterComplex = '';
 
     // Choose 9:16 filter graph based on style
     if (cropStyle === 'smart-crop') {
-      // Direct center 9:16 crop scaled to 1080x1920
-      filterComplex = '[0:v]crop=ih*9/16:ih:(iw-ih*9/16)/2:0,scale=1080:1920:flags=lanczos,setsar=1[v_crop]';
+      // Direct center 9:16 crop scaled to resolution
+      filterComplex = `[0:v]crop=ih*9/16:ih:(iw-ih*9/16)/2:0,scale=${outWidth}:${outHeight}:flags=lanczos,setsar=1[v_crop]`;
     } else if (cropStyle === 'fit-top-bottom') {
       // Fit video centered with sleek dark top/bottom bars (pad)
-      filterComplex = '[0:v]scale=1080:-2,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black@1.0,setsar=1[v_crop]';
+      filterComplex = `[0:v]scale=${outWidth}:-2,pad=${outWidth}:${outHeight}:(ow-iw)/2:(oh-ih)/2:color=black@1.0,setsar=1[v_crop]`;
     } else {
       // 'blurred-backdrop' (Default & standard for viral podcasts/interviews)
-      // Background: scale to 1080x1920 cropped + boxblur
-      // Foreground: scaled to 1080 width, centered over blurred background
+      // Background: scale to 9:16 cropped + boxblur
+      // Foreground: scaled to output width, centered over blurred background
       filterComplex = [
-        '[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=25:5[bg]',
-        '[0:v]scale=1080:-2[fg]',
-        '[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=1,setsar=1[v_crop]'
+        `[0:v]scale=${outWidth}:${outHeight}:force_original_aspect_ratio=increase,crop=${outWidth}:${outHeight},boxblur=25:5[bg]`,
+        `[0:v]scale=${outWidth}:-2[fg]`,
+        `[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=1,setsar=1[v_crop]`
       ].join(';');
     }
 
+    let currentVideoMap = '[v_crop]';
+
     // Optional Headline overlay banner
-    let finalVideoMap = '[v_crop]';
     if (addHeadline && headlineText && headlineText.trim().length > 0) {
       const sanitizedText = headlineText.replace(/[:\\']/g, ' ');
-      // Add stylish top banner overlay box and text
-      filterComplex += `;[v_crop]drawbox=x=40:y=120:w=1000:h=120:color=black@0.85:t=fill,drawtext=text='${sanitizedText}':fontcolor=white:fontsize=36:x=(w-text_w)/2:y=160:shadowcolor=black@0.5:shadowx=2:shadowy=2[v_final]`;
-      finalVideoMap = '[v_final]';
+      const bannerY = Math.round(outHeight * 0.06);
+      const bannerH = Math.round(outHeight * 0.065);
+      const fontSize = Math.round(outWidth * 0.034);
+      filterComplex += `;${currentVideoMap}drawbox=x=30:y=${bannerY}:w=${outWidth - 60}:h=${bannerH}:color=black@0.85:t=fill,drawtext=text='${sanitizedText}':fontcolor=white:fontsize=${fontSize}:x=(w-text_w)/2:y=${bannerY + Math.round(bannerH * 0.3)}:shadowcolor=black@0.6:shadowx=2:shadowy=2[v_headline]`;
+      currentVideoMap = '[v_headline]';
+    }
+
+    // Watermark overlay for Free plan or custom Brand watermark
+    if (watermark) {
+      const wmText = 'Made with ClipForge AI (Free Plan)';
+      const wmFontSize = Math.round(outWidth * 0.024);
+      const wmY = outHeight - Math.round(outHeight * 0.06);
+      filterComplex += `;${currentVideoMap}drawbox=x=20:y=${wmY - 8}:w=${outWidth - 40}:h=${wmFontSize + 20}:color=black@0.7:t=fill,drawtext=text='${wmText}':fontcolor=white@0.9:fontsize=${wmFontSize}:x=(w-text_w)/2:y=${wmY}:shadowcolor=black:shadowx=1:shadowy=1[v_watermark]`;
+      currentVideoMap = '[v_watermark]';
+    } else if (brandWatermark && brandWatermark.trim().length > 0) {
+      const brandSanitized = brandWatermark.replace(/[:\\']/g, ' ');
+      const bmFontSize = Math.round(outWidth * 0.022);
+      const bmY = outHeight - Math.round(outHeight * 0.05);
+      filterComplex += `;${currentVideoMap}drawtext=text='${brandSanitized}':fontcolor=white@0.85:fontsize=${bmFontSize}:x=w-text_w-30:y=${bmY}:shadowcolor=black@0.8:shadowx=1:shadowy=1[v_brand]`;
+      currentVideoMap = '[v_brand]';
     }
 
     const command = ffmpeg(inputVideoPath)
@@ -192,7 +226,7 @@ export function cutAndConvert916(
       .setDuration(duration)
       .complexFilter(filterComplex)
       .outputOptions([
-        `-map ${finalVideoMap}`,
+        `-map ${currentVideoMap}`,
         '-map 0:a?', // copy audio if available
         '-c:v libx264',
         '-preset fast',
@@ -231,13 +265,15 @@ export function cutAndConvert916(
           resolve({
             outputPath,
             fileSize: stats.size,
-            duration
+            duration,
+            resolution: resString,
           });
         } catch (err) {
           resolve({
             outputPath,
             fileSize: 0,
-            duration
+            duration,
+            resolution: resString,
           });
         }
       })
