@@ -421,6 +421,7 @@ export default function App() {
             uploadProgress={uploadProgress}
             errorMessage={errorMessage}
             samples={samples}
+            onOpenPricing={() => setIsPricingOpen(true)}
           />
         )}
 

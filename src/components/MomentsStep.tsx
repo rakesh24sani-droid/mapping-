@@ -116,14 +116,14 @@ export const MomentsStep: React.FC<MomentsStepProps> = ({
             <div className="flex items-center gap-2.5 text-amber-300">
               <Crown className="w-4 h-4 shrink-0 fill-amber-400 text-amber-400" />
               <span>
-                <strong>Free Plan Active:</strong> Clips export in <strong>720p HD with ClipForge Watermark</strong>. Upgrade for 1080p clean exports and 150-500 mins.
+                <strong>Free Plan Active:</strong> Clips export in <strong>720p HD with ClipForge Watermark</strong>. Upgrade for 1080p clean exports, no watermark, and up to 1500 mins.
               </span>
             </div>
             <button
               onClick={onOpenPricing}
-              className="px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shrink-0 cursor-pointer shadow-sm"
+              className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-bold text-xs shrink-0 cursor-pointer shadow-md"
             >
-              Upgrade (from ₹99/mo)
+              Upgrade (from ₹49/mo)
             </button>
           </div>
         )}

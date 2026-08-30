@@ -39,7 +39,7 @@ export const UsageModal: React.FC<UsageModalProps> = ({
   if (!isOpen) return null;
 
   const { plan, minutesUsed, minutesRemaining, usageHistory } = subscription;
-  const totalMinutes = plan.monthlyMinutes;
+  const totalMinutes = plan.minutesPerMonth || 30;
   const usagePercentage = Math.min(100, Math.round((minutesUsed / totalMinutes) * 100));
 
   const handleResetClick = async () => {
@@ -205,14 +205,14 @@ export const UsageModal: React.FC<UsageModalProps> = ({
                           </div>
                         )}
                         <div className="text-[10px] text-slate-500 font-mono mt-0.5">
-                          {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {item.secondsProcessed}s audio/video
+                          {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </div>
                       </div>
                     </div>
 
                     <div className="shrink-0 text-right font-mono">
                       <span className="font-bold text-amber-400">
-                        -{item.minutesUsed}m
+                        {item.durationMinutes > 0 ? `-${item.durationMinutes}m` : '0m'}
                       </span>
                     </div>
                   </div>

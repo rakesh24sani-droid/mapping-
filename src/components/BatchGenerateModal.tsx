@@ -109,7 +109,7 @@ export const BatchGenerateModal: React.FC<BatchGenerateModalProps> = ({
                   Batch Generation is exclusive to the PRO Plan
                 </h3>
                 <p className="text-xs text-slate-400 max-w-md mx-auto">
-                  Export all viral moments with 1 click, unlock 4K rendering, 1500 processing minutes, and VIP Turbo speed on <strong className="text-indigo-300 font-semibold">PRO (₹699/mo)</strong>.
+                  Export all viral moments with 1 click, unlock 4K rendering, 1500 processing minutes, and VIP Turbo speed on <strong className="text-indigo-300 font-semibold">PRO (₹399/mo)</strong>.
                 </p>
               </div>
 
@@ -120,7 +120,7 @@ export const BatchGenerateModal: React.FC<BatchGenerateModalProps> = ({
                 }}
                 className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs inline-flex items-center gap-2 cursor-pointer shadow-lg shadow-indigo-600/25"
               >
-                <span>Upgrade to PRO (₹699/mo)</span>
+                <span>Upgrade to PRO (₹399/mo)</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>
