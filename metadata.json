@@ -1,6 +1,6 @@
 {
   "name": "ClipForge AI",
-  "description": "Convert long-form videos into viral 9:16 vertical clips with AI transcript analysis, smart moment detection, and real FFmpeg processing.",
+  "description": "Convert long-form video links and files (YouTube, Drive, MP4) into viral 9:16 vertical shorts with AI transcript analysis, smart moment detection, and real FFmpeg processing.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

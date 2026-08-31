@@ -22,6 +22,11 @@ import {
   updateBrandKit,
 } from './server/subscription-service.js';
 import {
+  importVideoFromUrl,
+  detectUrlPlatform,
+  POPULAR_PRESET_LINKS,
+} from './server/url-importer.js';
+import {
   VideoMetadata,
   AnalysisResult,
   GeneratedClip,
@@ -259,6 +264,68 @@ async function startServer() {
   // Get available sample demo videos
   app.get('/api/samples', (req: Request, res: Response) => {
     res.json({ samples: SAMPLE_VIDEOS });
+  });
+
+  // Get Popular Preset Links for 1-Click URL Testing
+  app.get('/api/url-presets', (req: Request, res: Response) => {
+    res.json({ presets: POPULAR_PRESET_LINKS });
+  });
+
+  // Import Video from Any URL (YouTube, Direct MP4, Google Drive, Loom, Vimeo, etc.)
+  app.post('/api/import-url', async (req: Request, res: Response) => {
+    try {
+      const { url } = req.body as { url?: string };
+      if (!url || typeof url !== 'string' || !url.trim()) {
+        return res.status(400).json({ error: 'Please provide a valid video URL or YouTube link.' });
+      }
+
+      const rawUrl = url.trim();
+      const jobId = `job_import_${Date.now()}`;
+      const { type } = detectUrlPlatform(rawUrl);
+
+      const job: ProcessingJob = {
+        id: jobId,
+        type: 'upload',
+        status: 'processing',
+        progress: 10,
+        stage: `Connecting to ${type.toUpperCase()} stream...`,
+        detail: `Analyzing video link: ${rawUrl.slice(0, 60)}...`,
+      };
+      jobsStore.set(jobId, job);
+
+      // Perform import
+      try {
+        const importResult = await importVideoFromUrl(rawUrl, (prog) => {
+          job.progress = prog.progress;
+          job.stage = prog.stage;
+          job.detail = prog.message;
+        });
+
+        const videoData = importResult.video;
+        videosStore.set(videoData.id, videoData);
+
+        job.progress = 100;
+        job.status = 'completed';
+        job.stage = 'Video imported successfully!';
+        job.result = videoData;
+
+        return res.json({
+          success: true,
+          jobId,
+          video: videoData,
+          sourceType: importResult.sourceType,
+          title: importResult.title,
+        });
+      } catch (importErr: any) {
+        job.status = 'failed';
+        job.error = importErr.message || 'Failed to download or import video from URL';
+        console.error('URL import error:', importErr);
+        return res.status(500).json({ error: importErr.message || 'Failed to import video from link' });
+      }
+    } catch (err: any) {
+      console.error('URL import handler error:', err);
+      res.status(500).json({ error: err.message || 'Server error during URL import' });
+    }
   });
 
   // Load a sample demo video
@@ -573,15 +640,17 @@ async function startServer() {
     res.json({ success: true, jobId, clipId });
   });
 
-  // Check Job Status Endpoint (for progress bar & error states)
-  app.get('/api/jobs/:jobId', (req: Request, res: Response) => {
+  // Check Job Status Endpoint (supports both /api/jobs/:jobId and /api/job/:jobId)
+  const getJobHandler = (req: Request, res: Response) => {
     const { jobId } = req.params;
     const job = jobsStore.get(jobId);
     if (!job) {
-      return res.status(404).json({ error: 'Job not found' });
+      return res.status(404).json({ error: 'Job not found', jobId });
     }
-    res.json({ job });
-  });
+    res.json({ success: true, job });
+  };
+  app.get('/api/jobs/:jobId', getJobHandler);
+  app.get('/api/job/:jobId', getJobHandler);
 
   // Get Generated Clip Details
   app.get('/api/clips/:clipId', (req: Request, res: Response) => {
@@ -687,6 +756,42 @@ async function startServer() {
     });
   });
 
+  // Express Centralized API Error Handling Middleware
+  app.use((err: any, req: Request, res: Response, next: any) => {
+    console.error('Unhandled Express Error:', err);
+    if (res.headersSent) {
+      return next(err);
+    }
+    res.status(err.status || 500).json({
+      error: err.message || 'Internal Server Error',
+      timestamp: new Date().toISOString(),
+    });
+  });
+
+  // Background Cleanup for Temp Files older than 4 hours
+  setInterval(() => {
+    try {
+      const now = Date.now();
+      const maxAgeMs = 4 * 60 * 60 * 1000; // 4 hours
+      [uploadsDir, clipsDir].forEach((folder) => {
+        if (!fs.existsSync(folder)) return;
+        const files = fs.readdirSync(folder);
+        files.forEach((file) => {
+          if (file.startsWith('sample_')) return; // Keep demo files
+          const filePath = path.join(folder, file);
+          try {
+            const stat = fs.statSync(filePath);
+            if (now - stat.mtimeMs > maxAgeMs) {
+              fs.unlinkSync(filePath);
+            }
+          } catch {}
+        });
+      });
+    } catch (e) {
+      console.warn('Storage cleanup non-critical error:', e);
+    }
+  }, 30 * 60 * 1000);
+
   // Vite middleware setup
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
@@ -706,6 +811,15 @@ async function startServer() {
     console.log(`ClipForge AI backend server running on http://0.0.0.0:${PORT}`);
   });
 }
+
+// Global Process Crash Prevention
+process.on('unhandledRejection', (reason, promise) => {
+  console.warn('Unhandled Promise Rejection caught safely:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception caught safely:', err);
+});
 
 startServer().catch((err) => {
   console.error('Fatal server startup error:', err);

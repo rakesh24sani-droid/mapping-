@@ -12,6 +12,7 @@ import {
   UserSubscription,
   BrandKitSettings,
   VideoCropStyle,
+  PlanId,
 } from './types.js';
 import { Header } from './components/Header.js';
 import { UploadStep } from './components/UploadStep.js';
@@ -99,7 +100,7 @@ export default function App() {
   }, []);
 
   // Handle Plan Upgrade / Switch
-  const handleSelectPlan = async (planId: string, billingCycle: 'monthly' | 'yearly') => {
+  const handleSelectPlan = async (planId: PlanId, billingCycle: 'monthly' | 'annual') => {
     try {
       const res = await fetch('/api/subscription/change-plan', {
         method: 'POST',
@@ -210,6 +211,46 @@ export default function App() {
     }
   };
 
+  // Handler: User imports a video from URL (YouTube, MP4, Drive, Loom, Vimeo, etc.)
+  const handleUrlSelected = async (url: string) => {
+    try {
+      setIsUploading(true);
+      setUploadProgress(15);
+      setErrorMessage(undefined);
+
+      const progressTimer = setInterval(() => {
+        setUploadProgress((prev) => (prev < 90 ? prev + 12 : prev));
+      }, 400);
+
+      const response = await fetch('/api/import-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+
+      clearInterval(progressTimer);
+      setUploadProgress(100);
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to import video from link');
+      }
+
+      const data = await response.json();
+      const videoData: VideoMetadata = data.video;
+
+      setVideo(videoData);
+      setIsUploading(false);
+
+      // Automatically trigger AI Analysis step
+      startAnalysis(videoData.id);
+    } catch (err: any) {
+      console.error('URL import error:', err);
+      setIsUploading(false);
+      setErrorMessage(err.message || 'Failed to import video from link');
+    }
+  };
+
   // Handler: User clicks a demo sample video
   const handleSampleSelected = async (sampleId: string) => {
     try {
@@ -293,13 +334,29 @@ export default function App() {
   ) => {
     if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
 
+    let errorCount = 0;
     pollIntervalRef.current = setInterval(async () => {
       try {
-        const response = await fetch(`/api/job/${jobId}`);
-        if (!response.ok) throw new Error('Status check failed');
+        const response = await fetch(`/api/jobs/${jobId}`);
+        if (!response.ok) {
+          errorCount++;
+          if (errorCount > 10) {
+            if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+            onError('Processing status timed out. Please retry.');
+          }
+          return;
+        }
+
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+          return;
+        }
 
         const data = await response.json();
         const job: ProcessingJob = data.job;
+        if (!job) return;
+
+        errorCount = 0;
         setCurrentJob(job);
 
         if (job.status === 'completed') {
@@ -310,7 +367,7 @@ export default function App() {
           onError(job.error || 'Processing encountered an unexpected error');
         }
       } catch (err: any) {
-        console.error('Job polling error:', err);
+        console.warn('Job polling transient error:', err);
       }
     }, 800);
   };
@@ -416,6 +473,7 @@ export default function App() {
         {currentStep === 'upload' && (
           <UploadStep
             onVideoSelected={handleVideoSelected}
+            onUrlSelected={handleUrlSelected}
             onSampleSelected={handleSampleSelected}
             isUploading={isUploading}
             uploadProgress={uploadProgress}
@@ -539,7 +597,7 @@ export default function App() {
             <span className="text-[10px] uppercase font-bold text-slate-500">Output Quality</span>
             <span className="text-xs font-medium text-slate-300">
               {subscription?.plan.maxResolution.toUpperCase()} • 9:16 Vertical •{' '}
-              {subscription?.plan.hasWatermark ? 'Watermarked' : 'Clean (No Watermark)'}
+              {subscription?.plan.watermark ? 'Watermarked' : 'Clean (No Watermark)'}
             </span>
           </div>
         </div>

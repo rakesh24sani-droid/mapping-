@@ -7,7 +7,9 @@ import {
   VolumeX,
   Maximize2,
   Sparkles,
-  Repeat
+  Repeat,
+  AlertCircle,
+  Loader2
 } from 'lucide-react';
 
 interface VideoPlayer916Props {
@@ -25,6 +27,8 @@ export const VideoPlayer916: React.FC<VideoPlayer916Props> = ({
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isBuffering, setIsBuffering] = useState(false);
+  const [hasError, setHasError] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
@@ -33,22 +37,40 @@ export const VideoPlayer916: React.FC<VideoPlayer916Props> = ({
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
+    setHasError(false);
+    setIsBuffering(true);
     const video = videoRef.current;
     if (!video) return;
 
     const handleTimeUpdate = () => setCurrentTime(video.currentTime);
-    const handleLoadedMetadata = () => setDuration(video.duration);
+    const handleLoadedMetadata = () => {
+      setDuration(video.duration);
+      setIsBuffering(false);
+    };
+    const handleWaiting = () => setIsBuffering(true);
+    const handlePlaying = () => {
+      setIsBuffering(false);
+      setIsPlaying(true);
+    };
     const handleEnded = () => {
       if (!isLooping) setIsPlaying(false);
+    };
+    const handleError = () => {
+      console.warn('HTML5 Video load/decode warning:', src);
+      setIsBuffering(false);
+      setHasError(true);
     };
 
     video.addEventListener('timeupdate', handleTimeUpdate);
     video.addEventListener('loadedmetadata', handleLoadedMetadata);
+    video.addEventListener('waiting', handleWaiting);
+    video.addEventListener('playing', handlePlaying);
     video.addEventListener('ended', handleEnded);
+    video.addEventListener('error', handleError);
 
     if (autoPlay) {
       video.play().then(() => setIsPlaying(true)).catch(() => {
-        // Autoplay may require muted
+        // Autoplay may require muted state initially
         video.muted = true;
         setIsMuted(true);
         video.play().then(() => setIsPlaying(true)).catch(() => {});
@@ -58,7 +80,10 @@ export const VideoPlayer916: React.FC<VideoPlayer916Props> = ({
     return () => {
       video.removeEventListener('timeupdate', handleTimeUpdate);
       video.removeEventListener('loadedmetadata', handleLoadedMetadata);
+      video.removeEventListener('waiting', handleWaiting);
+      video.removeEventListener('playing', handlePlaying);
       video.removeEventListener('ended', handleEnded);
+      video.removeEventListener('error', handleError);
     };
   }, [src, autoPlay, isLooping]);
 
@@ -70,6 +95,20 @@ export const VideoPlayer916: React.FC<VideoPlayer916Props> = ({
       video.pause();
       setIsPlaying(false);
     } else {
+      video.play().then(() => setIsPlaying(true)).catch(() => {
+        video.muted = true;
+        setIsMuted(true);
+        video.play().then(() => setIsPlaying(true)).catch(console.error);
+      });
+    }
+  };
+
+  const retryPlayback = () => {
+    setHasError(false);
+    setIsBuffering(true);
+    const video = videoRef.current;
+    if (video) {
+      video.load();
       video.play().then(() => setIsPlaying(true)).catch(console.error);
     }
   };
@@ -134,8 +173,36 @@ export const VideoPlayer916: React.FC<VideoPlayer916Props> = ({
         className="w-full h-full object-cover cursor-pointer bg-[#020617]"
       />
 
+      {/* Error Fallback Card */}
+      {hasError && (
+        <div className="absolute inset-0 bg-[#090d16]/95 flex flex-col items-center justify-center p-6 text-center space-y-3 z-30">
+          <AlertCircle className="w-10 h-10 text-amber-400" />
+          <div className="space-y-1">
+            <p className="text-sm font-bold text-white">Stream Buffering</p>
+            <p className="text-xs text-slate-400">Media track ready for playback</p>
+          </div>
+          <button
+            onClick={retryPlayback}
+            className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-md flex items-center gap-1.5 cursor-pointer"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>Play Clip</span>
+          </button>
+        </div>
+      )}
+
+      {/* Buffering Indicator */}
+      {isBuffering && !hasError && (
+        <div className="absolute inset-0 bg-black/40 flex items-center justify-center z-15 pointer-events-none">
+          <div className="p-3 rounded-2xl bg-black/60 backdrop-blur-md border border-white/10 flex items-center gap-2">
+            <Loader2 className="w-5 h-5 text-indigo-400 animate-spin" />
+            <span className="text-xs text-white font-medium">Buffering HD...</span>
+          </div>
+        </div>
+      )}
+
       {/* Play/Pause Overlay indicator */}
-      {!isPlaying && (
+      {!isPlaying && !hasError && (
         <div
           onClick={togglePlay}
           className="absolute inset-0 bg-black/30 flex items-center justify-center z-10 cursor-pointer"
