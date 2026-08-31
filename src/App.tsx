@@ -563,6 +563,9 @@ export default function App() {
             onUrlSelected={handleUrlSelected}
             onSampleSelected={handleSampleSelected}
             isUploading={isUploading}
+            uploadProgress={uploadProgress}
+            errorMessage={errorMessage}
+            onClearError={() => setErrorMessage(undefined)}
             samples={samples}
             subscription={subscription}
             currentUser={currentUser}

@@ -45,6 +45,9 @@ interface LandingPageProps {
   subscription: UserSubscription | null;
   currentUser: UserProfile | null;
   isUploading: boolean;
+  uploadProgress?: number;
+  errorMessage?: string;
+  onClearError?: () => void;
   onSignOut: () => void;
   onOpenStudio?: () => void;
 }
@@ -59,6 +62,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   subscription,
   currentUser,
   isUploading,
+  uploadProgress = 0,
+  errorMessage,
+  onClearError,
   onSignOut,
   onOpenStudio,
 }) => {
@@ -68,24 +74,62 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   const [isBlogModalOpen, setIsBlogModalOpen] = useState(false);
   const [selectedArticle, setSelectedArticle] = useState<string | null>(null);
   const [isPlayingMockVideo, setIsPlayingMockVideo] = useState(true);
+  const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Quick preset links for 1-click test
+  const quickPresets = [
+    {
+      name: 'Huberman Lab',
+      badge: '🎙️ Podcast',
+      url: 'https://www.youtube.com/watch?v=QmOF0crdyRU',
+      sampleId: 'huberman_focus',
+    },
+    {
+      name: 'Sam Altman & Lex',
+      badge: '🤖 AI & Tech',
+      url: 'https://www.youtube.com/watch?v=L_Guz73G6QY',
+      sampleId: 'lex_ai',
+    },
+    {
+      name: 'MrBeast Viral',
+      badge: '⚡ Creator',
+      url: 'https://www.youtube.com/watch?v=0e3GPea1Tyg',
+      sampleId: 'mrbeast_viral',
+    },
+    {
+      name: 'Finance & Wealth',
+      badge: '💰 Money',
+      url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+      sampleId: 'finance_wealth',
+    },
+  ];
 
   // Handle Convert Now
   const handleConvertSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    if (onClearError) onClearError();
     const cleanUrl = inputUrl.trim();
     if (!cleanUrl) {
-      // If empty, prompt with default preset
+      // If empty, prompt with default preset or first sample
       if (samples.length > 0) {
-        onSampleSelected(samples[0].id);
+        await onSampleSelected(samples[0].id);
       }
       return;
     }
     await onUrlSelected(cleanUrl);
   };
 
+  // Handle preset pill click
+  const handlePresetClick = async (preset: typeof quickPresets[0]) => {
+    if (onClearError) onClearError();
+    setInputUrl(preset.url);
+    await onUrlSelected(preset.url);
+  };
+
   // Handle Upload File button click
   const handleUploadClick = () => {
+    if (onClearError) onClearError();
     if (fileInputRef.current) {
       fileInputRef.current.click();
     }
@@ -94,6 +138,32 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0];
+      if (onClearError) onClearError();
+      onVideoSelected(file);
+    }
+  };
+
+  // Drag & drop handlers
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    if (onClearError) onClearError();
+
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const file = e.dataTransfer.files[0];
       onVideoSelected(file);
     }
   };
@@ -302,15 +372,57 @@ export const LandingPage: React.FC<LandingPageProps> = ({
 
             {/* Interactive Link Input & Convert Bar */}
             <div className="pt-3 space-y-4">
-              <form onSubmit={handleConvertSubmit} className="relative flex flex-col sm:flex-row items-stretch gap-2 sm:gap-0 p-1.5 rounded-2xl bg-slate-900/90 border border-slate-700/80 shadow-2xl focus-within:border-indigo-500 transition-colors">
+              {/* Error Alert if any */}
+              {errorMessage && (
+                <div className="p-4 rounded-2xl bg-rose-950/60 border border-rose-800/80 text-rose-200 text-xs sm:text-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-7 h-7 rounded-lg bg-rose-900/60 text-rose-400 flex items-center justify-center shrink-0">
+                      ⚠️
+                    </div>
+                    <p className="font-medium text-rose-100">{errorMessage}</p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={handleTryDemoClick}
+                      className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs cursor-pointer shadow"
+                    >
+                      Try Demo Video
+                    </button>
+                    {onClearError && (
+                      <button
+                        onClick={onClearError}
+                        className="px-2.5 py-1.5 rounded-lg bg-rose-900/50 hover:bg-rose-800/60 text-rose-300 text-xs cursor-pointer"
+                      >
+                        Dismiss
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Form Input Bar with Drag & Drop */}
+              <form
+                onSubmit={handleConvertSubmit}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                className={`relative flex flex-col sm:flex-row items-stretch gap-2 sm:gap-0 p-1.5 rounded-2xl bg-slate-900/90 border transition-all ${
+                  isDragging
+                    ? 'border-indigo-500 bg-indigo-950/30 scale-[1.01] shadow-2xl shadow-indigo-500/20 ring-2 ring-indigo-500/50'
+                    : 'border-slate-700/80 shadow-2xl focus-within:border-indigo-500'
+                }`}
+              >
                 <div className="flex items-center gap-3 pl-3.5 pr-2 py-2 flex-1">
                   <LinkIcon className="w-4 h-4 text-slate-400 shrink-0" />
                   <input
                     type="url"
                     id="hero-video-url-input"
                     value={inputUrl}
-                    onChange={(e) => setInputUrl(e.target.value)}
-                    placeholder="Paste YouTube / Drive / Video link here..."
+                    onChange={(e) => {
+                      setInputUrl(e.target.value);
+                      if (errorMessage && onClearError) onClearError();
+                    }}
+                    placeholder="Paste YouTube / Drive / Direct Video link here..."
                     className="w-full bg-transparent text-sm text-white placeholder-slate-500 focus:outline-none"
                   />
                 </div>
@@ -318,18 +430,38 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                   type="submit"
                   id="hero-convert-btn"
                   disabled={isUploading}
-                  className="px-6 py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-sm shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 cursor-pointer transition-all transform active:scale-98 shrink-0"
+                  className="px-6 py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-sm shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 cursor-pointer transition-all transform active:scale-98 shrink-0 disabled:opacity-50"
                 >
                   <Sparkles className="w-4 h-4" />
                   <span>Convert Now</span>
                 </button>
               </form>
 
+              {/* Quick 1-Click Preset Test Links */}
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <span className="text-[11px] font-semibold text-slate-400 flex items-center gap-1">
+                  <Zap className="w-3 h-3 text-amber-400 fill-amber-400" />
+                  <span>Quick Test:</span>
+                </span>
+                {quickPresets.map((preset) => (
+                  <button
+                    key={preset.name}
+                    type="button"
+                    onClick={() => handlePresetClick(preset)}
+                    disabled={isUploading}
+                    className="px-2.5 py-1 rounded-lg bg-slate-900/80 hover:bg-slate-800 border border-slate-800 hover:border-indigo-500/50 text-[11px] text-slate-300 hover:text-white flex items-center gap-1.5 transition-all cursor-pointer shadow-sm hover:scale-105 active:scale-95"
+                  >
+                    <span>{preset.badge}</span>
+                    <span className="font-medium">{preset.name}</span>
+                  </button>
+                ))}
+              </div>
+
               {/* Divider 'or' */}
               <div className="relative flex items-center justify-center my-2">
                 <div className="w-full border-t border-slate-800/80" />
                 <span className="absolute bg-[#070b14] px-4 text-xs font-semibold text-slate-500 lowercase tracking-wider">
-                  or
+                  or upload directly
                 </span>
               </div>
 
@@ -340,10 +472,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                   id="hero-upload-file-btn"
                   onClick={handleUploadClick}
                   disabled={isUploading}
-                  className="py-3 px-4 rounded-xl bg-slate-900/80 hover:bg-slate-850 border border-slate-700/80 hover:border-slate-600 text-slate-200 hover:text-white font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md"
+                  className="py-3 px-4 rounded-xl bg-slate-900/80 hover:bg-slate-850 border border-slate-700/80 hover:border-slate-600 text-slate-200 hover:text-white font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md active:scale-98 disabled:opacity-50"
                 >
-                  <Upload className="w-4 h-4 text-slate-300" />
-                  <span>Upload File</span>
+                  <Upload className="w-4 h-4 text-indigo-400" />
+                  <span>Upload File (MP4/MOV)</span>
                 </button>
 
                 <button
@@ -351,10 +483,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                   id="hero-try-demo-btn"
                   onClick={handleTryDemoClick}
                   disabled={isUploading}
-                  className="py-3 px-4 rounded-xl bg-slate-900/80 hover:bg-slate-850 border border-slate-700/80 hover:border-slate-600 text-slate-200 hover:text-white font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md"
+                  className="py-3 px-4 rounded-xl bg-slate-900/80 hover:bg-slate-850 border border-slate-700/80 hover:border-slate-600 text-slate-200 hover:text-white font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md active:scale-98 disabled:opacity-50"
                 >
                   <Zap className="w-4 h-4 text-amber-400 fill-amber-400" />
-                  <span>Try Demo</span>
+                  <span>Try Demo Studio</span>
                 </button>
               </div>
 
@@ -1010,6 +1142,59 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 </p>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 8. UPLOADING / STREAM IMPORTING OVERLAY MODAL */}
+      {/* ========================================================================= */}
+      {isUploading && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
+          <div className="w-full max-w-md bg-[#0f172a] border border-indigo-500/40 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 text-center">
+            
+            {/* Spinning Glow Icon */}
+            <div className="relative w-20 h-20 mx-auto flex items-center justify-center">
+              <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-600 animate-spin blur-md opacity-70" />
+              <div className="relative w-16 h-16 rounded-full bg-slate-900 border border-indigo-500/50 flex items-center justify-center text-indigo-400 shadow-xl">
+                <Sparkles className="w-8 h-8 animate-pulse text-indigo-400" />
+              </div>
+            </div>
+
+            {/* Header & Status */}
+            <div className="space-y-2">
+              <h3 className="text-xl font-black text-white tracking-tight">
+                Importing & Reading Video...
+              </h3>
+              <p className="text-xs text-slate-300">
+                {uploadProgress < 30
+                  ? 'Connecting to video stream and fetching metadata...'
+                  : uploadProgress < 75
+                  ? 'Processing audio track and analyzing video bitrate...'
+                  : 'Finalizing video streams and transferring to AI engine...'}
+              </p>
+            </div>
+
+            {/* Progress Bar */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs font-mono">
+                <span className="text-slate-400">Progress</span>
+                <span className="text-indigo-400 font-bold">{Math.round(uploadProgress)}%</span>
+              </div>
+              <div className="h-2.5 w-full bg-slate-800 rounded-full overflow-hidden p-0.5 border border-slate-700/60">
+                <div
+                  className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-full transition-all duration-300 shadow-sm"
+                  style={{ width: `${Math.max(10, Math.min(100, uploadProgress))}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Feature Note */}
+            <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 text-[11px] text-slate-400 flex items-center justify-center gap-2">
+              <Cpu className="w-4 h-4 text-indigo-400 shrink-0" />
+              <span>AI will automatically detect top viral moments in next step</span>
+            </div>
+
           </div>
         </div>
       )}
