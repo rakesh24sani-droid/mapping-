@@ -27,12 +27,20 @@ import {
   POPULAR_PRESET_LINKS,
 } from './server/url-importer.js';
 import {
+  registerUser,
+  loginUser,
+  getUserByToken,
+  logoutUser,
+  getDemoAccounts,
+} from './server/auth-service.js';
+import {
   VideoMetadata,
   AnalysisResult,
   GeneratedClip,
   ProcessingJob,
   ClipGenerationOptions,
   PlanId,
+  UserProfile,
 } from './src/types.js';
 
 dotenv.config();
@@ -95,6 +103,75 @@ async function startServer() {
       storageReady: true,
       timestamp: new Date().toISOString(),
     });
+  });
+
+  // ==========================================
+  // USER AUTHENTICATION ENDPOINTS
+  // ==========================================
+
+  // Register / Sign Up
+  app.post('/api/auth/signup', (req: Request, res: Response) => {
+    try {
+      const { name, email, password } = req.body;
+      const { user, token } = registerUser(name, email, password);
+      res.status(201).json({
+        success: true,
+        user,
+        token,
+        message: `Welcome to ClipForge AI, ${user.name}! Your account is active.`,
+      });
+    } catch (err: any) {
+      console.warn('Sign Up error:', err.message);
+      res.status(400).json({ success: false, error: err.message || 'Registration failed' });
+    }
+  });
+
+  // Sign In / Login
+  app.post('/api/auth/signin', (req: Request, res: Response) => {
+    try {
+      const { email, password } = req.body;
+      const { user, token } = loginUser(email, password);
+      res.json({
+        success: true,
+        user,
+        token,
+        message: `Welcome back, ${user.name}!`,
+      });
+    } catch (err: any) {
+      console.warn('Sign In error:', err.message);
+      res.status(401).json({ success: false, error: err.message || 'Invalid email or password' });
+    }
+  });
+
+  // Get Current Authenticated User Session
+  app.get('/api/auth/me', (req: Request, res: Response) => {
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+
+    if (!token) {
+      return res.status(401).json({ success: false, error: 'No active session' });
+    }
+
+    const user = getUserByToken(token);
+    if (!user) {
+      return res.status(401).json({ success: false, error: 'Invalid or expired session' });
+    }
+
+    res.json({ success: true, user });
+  });
+
+  // Sign Out / Logout
+  app.post('/api/auth/signout', (req: Request, res: Response) => {
+    const { token } = req.body;
+    if (token) {
+      logoutUser(token);
+    }
+    res.json({ success: true, message: 'Logged out successfully' });
+  });
+
+  // Get Demo Accounts for Quick 1-Click Login
+  app.get('/api/auth/demo-accounts', (req: Request, res: Response) => {
+    res.json({ success: true, accounts: getDemoAccounts() });
   });
 
   // ==========================================

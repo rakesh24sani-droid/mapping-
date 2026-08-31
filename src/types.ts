@@ -164,3 +164,22 @@ export interface UserSubscription {
   brandKit: BrandKitSettings;
   usageHistory: UsageRecord[];
 }
+
+export interface UserProfile {
+  id: string;
+  name: string;
+  email: string;
+  avatar?: string;
+  role: 'creator' | 'pro' | 'admin' | 'user';
+  createdAt: string;
+  planId: PlanId;
+}
+
+export type AuthMode = 'signin' | 'signup';
+
+export interface AuthResponse {
+  success: boolean;
+  user: UserProfile;
+  token: string;
+  message?: string;
+}

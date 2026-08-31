@@ -13,9 +13,12 @@ import {
   BrandKitSettings,
   VideoCropStyle,
   PlanId,
+  UserProfile,
+  AuthMode,
 } from './types.js';
 import { Header } from './components/Header.js';
 import { UploadStep } from './components/UploadStep.js';
+import { LandingPage } from './components/LandingPage.js';
 import { AnalysisStep } from './components/AnalysisStep.js';
 import { MomentsStep } from './components/MomentsStep.js';
 import { GenerateModal } from './components/GenerateModal.js';
@@ -24,8 +27,15 @@ import { PricingModal } from './components/PricingModal.js';
 import { UsageModal } from './components/UsageModal.js';
 import { BrandKitModal } from './components/BrandKitModal.js';
 import { BatchGenerateModal } from './components/BatchGenerateModal.js';
+import { AuthModal } from './components/AuthModal.js';
 
 export default function App() {
+  // Authentication State
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
+  const [authToken, setAuthToken] = useState<string | null>(null);
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [authMode, setAuthMode] = useState<AuthMode>('signin');
+
   // Core Workflow State
   const [currentStep, setCurrentStep] = useState<WorkflowStep>('upload');
   const [samples, setSamples] = useState<SampleVideoItem[]>([]);
@@ -52,6 +62,75 @@ export default function App() {
 
   // Polling ref
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Restore or Initialize User Session
+  useEffect(() => {
+    const savedToken = localStorage.getItem('clipforge_token');
+    const savedUser = localStorage.getItem('clipforge_user');
+
+    if (savedToken && savedUser) {
+      try {
+        setAuthToken(savedToken);
+        setCurrentUser(JSON.parse(savedUser));
+      } catch (e) {
+        console.warn('Error reading stored user session:', e);
+      }
+
+      // Verify session with server
+      fetch('/api/auth/me', {
+        headers: { Authorization: `Bearer ${savedToken}` },
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data?.user) {
+            setCurrentUser(data.user);
+            localStorage.setItem('clipforge_user', JSON.stringify(data.user));
+          }
+        })
+        .catch((err) => console.warn('Failed to verify session token:', err));
+    } else {
+      // Default to Alex Morgan Demo Creator for immediate preview convenience
+      const defaultUser: UserProfile = {
+        id: 'user_alex_creator',
+        name: 'Alex Morgan',
+        email: 'alex.creator@clipforge.ai',
+        role: 'creator',
+        createdAt: '2026-01-15T10:00:00.000Z',
+        planId: 'creator',
+      };
+      setCurrentUser(defaultUser);
+      setAuthToken('tok_user_alex_creator_demo');
+      localStorage.setItem('clipforge_user', JSON.stringify(defaultUser));
+      localStorage.setItem('clipforge_token', 'tok_user_alex_creator_demo');
+    }
+  }, []);
+
+  const handleAuthSuccess = (user: UserProfile, token: string) => {
+    setCurrentUser(user);
+    setAuthToken(token);
+    localStorage.setItem('clipforge_user', JSON.stringify(user));
+    localStorage.setItem('clipforge_token', token);
+    setIsAuthOpen(false);
+    fetchSubscription();
+  };
+
+  const handleSignOut = async () => {
+    if (authToken) {
+      try {
+        await fetch('/api/auth/signout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: authToken }),
+        });
+      } catch (err) {
+        console.warn('Sign out error:', err);
+      }
+    }
+    setCurrentUser(null);
+    setAuthToken(null);
+    localStorage.removeItem('clipforge_user');
+    localStorage.removeItem('clipforge_token');
+  };
 
   // Fetch subscription info
   const fetchSubscription = async () => {
@@ -458,28 +537,46 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0f172a] text-slate-200 flex flex-col font-sans">
-      <Header
-        currentStep={currentStep}
-        onReset={handleReset}
-        hasVideo={!!video}
-        subscription={subscription}
-        onOpenPricing={() => setIsPricingOpen(true)}
-        onOpenUsage={() => setIsUsageOpen(true)}
-        onOpenBrandKit={() => setIsBrandKitOpen(true)}
-      />
+    <div className="min-h-screen bg-[#070b14] text-slate-200 flex flex-col font-sans">
+      {currentStep !== 'upload' && (
+        <Header
+          currentStep={currentStep}
+          onReset={handleReset}
+          hasVideo={!!video}
+          subscription={subscription}
+          currentUser={currentUser}
+          onOpenPricing={() => setIsPricingOpen(true)}
+          onOpenUsage={() => setIsUsageOpen(true)}
+          onOpenBrandKit={() => setIsBrandKitOpen(true)}
+          onOpenAuth={(mode) => {
+            setAuthMode(mode);
+            setIsAuthOpen(true);
+          }}
+          onSignOut={handleSignOut}
+        />
+      )}
 
       <main className="flex-1 flex flex-col justify-center">
         {currentStep === 'upload' && (
-          <UploadStep
+          <LandingPage
             onVideoSelected={handleVideoSelected}
             onUrlSelected={handleUrlSelected}
             onSampleSelected={handleSampleSelected}
             isUploading={isUploading}
-            uploadProgress={uploadProgress}
-            errorMessage={errorMessage}
             samples={samples}
+            subscription={subscription}
+            currentUser={currentUser}
             onOpenPricing={() => setIsPricingOpen(true)}
+            onOpenAuth={(mode) => {
+              setAuthMode(mode);
+              setIsAuthOpen(true);
+            }}
+            onSignOut={handleSignOut}
+            onOpenStudio={() => {
+              if (samples.length > 0) {
+                handleSampleSelected(samples[0].id);
+              }
+            }}
           />
         )}
 
@@ -536,6 +633,14 @@ export default function App() {
           }}
         />
       )}
+
+      {/* User Authentication Modal (Sign In / Sign Up) */}
+      <AuthModal
+        isOpen={isAuthOpen}
+        initialMode={authMode}
+        onClose={() => setIsAuthOpen(false)}
+        onAuthSuccess={handleAuthSuccess}
+      />
 
       {/* Subscription Pricing Modal */}
       <PricingModal

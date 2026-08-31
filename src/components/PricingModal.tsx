@@ -384,26 +384,31 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                             <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                             <span>Current Active Plan</span>
                           </button>
+                        ) : plan.priceMonthlyINR === 0 ? (
+                          <button
+                            id={`select-plan-${plan.id}`}
+                            onClick={() => handlePlanClick(plan)}
+                            className="w-full py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700"
+                          >
+                            <span>Downgrade to Free</span>
+                            <ArrowRight className="w-3.5 h-3.5" />
+                          </button>
                         ) : (
                           <button
                             id={`select-plan-${plan.id}`}
                             onClick={() => handlePlanClick(plan)}
-                            className={`w-full py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md ${
+                            className={`w-full py-2.5 rounded-xl font-bold text-xs flex items-center justify-between px-3.5 transition-all cursor-pointer shadow-md ${
                               isPopular
                                 ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-amber-500/25'
                                 : isStarter
                                 ? 'bg-cyan-600 hover:bg-cyan-500 text-white shadow-cyan-600/25'
-                                : plan.priceMonthlyINR === 0
-                                ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'
                                 : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-600/25'
                             }`}
                           >
-                            <span>
-                              {plan.priceMonthlyINR === 0
-                                ? 'Downgrade to Free'
-                                : `Upgrade for ₹${displayPrice}/mo`}
+                            <span>Upgrade for ₹{displayPrice}/mo</span>
+                            <span className="text-[10px] uppercase font-black px-1.5 py-0.5 rounded bg-black/25 text-white">
+                              Coming Soon
                             </span>
-                            <ArrowRight className="w-3.5 h-3.5" />
                           </button>
                         )}
                       </div>
@@ -716,6 +721,24 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                           <span className="text-emerald-400 font-mono font-black">₹{calcTotal}</span>
                         </div>
                       </div>
+
+                      {/* Coming Soon Notice for Paid Plans */}
+                      {selectedPlanToConfirm.priceMonthlyINR > 0 && (
+                        <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-2.5 text-left">
+                          <Clock className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                          <div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-bold text-amber-300">Payment Gateway Coming Soon</span>
+                              <span className="px-1.5 py-0.2 text-[9px] font-black uppercase tracking-wider bg-amber-500/20 text-amber-300 rounded border border-amber-500/30">
+                                In Progress
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-300 mt-0.5 leading-snug">
+                              Online checkout is currently being integrated and will be available soon. All free tier tools and AI video generators are fully operational!
+                            </p>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -729,20 +752,29 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                     >
                       Cancel
                     </button>
-                    <button
-                      type="button"
-                      id="confirm-plan-change-btn"
-                      onClick={handleConfirmUpgrade}
-                      disabled={isUpgrading}
-                      className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs sm:text-sm flex items-center gap-2 cursor-pointer shadow-lg shadow-emerald-600/30"
-                    >
-                      <Check className="w-4 h-4" />
-                      <span>
-                        {selectedPlanToConfirm.priceMonthlyINR === 0
-                          ? 'Activate Free Plan'
-                          : `Complete Upgrade for ₹${calcTotal}`}
-                      </span>
-                    </button>
+                    {selectedPlanToConfirm.priceMonthlyINR === 0 ? (
+                      <button
+                        type="button"
+                        id="confirm-plan-change-btn"
+                        onClick={handleConfirmUpgrade}
+                        disabled={isUpgrading}
+                        className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs sm:text-sm flex items-center gap-2 cursor-pointer shadow-lg shadow-emerald-600/30"
+                      >
+                        <Check className="w-4 h-4" />
+                        <span>Activate Free Plan</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        id="confirm-plan-change-btn"
+                        disabled={true}
+                        className="px-6 py-2.5 rounded-xl bg-slate-800/90 text-slate-400 border border-slate-700 font-bold text-xs sm:text-sm flex items-center gap-2 cursor-not-allowed opacity-80"
+                        title="Payment gateway is coming soon"
+                      >
+                        <Lock className="w-4 h-4 text-amber-400" />
+                        <span>Payment Coming Soon (₹{calcTotal})</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               )}
